@@ -9,7 +9,7 @@
 class bbox3
 {
     private $ip = "192.168.1.1", $port = 80, $ssl = false, $user = "user", $password = "";
-    private $cookiejar;
+    private $cookiejar, $connectedSeconds = 0;
 
     function __construct($ip, $user, $password)
     {
@@ -59,6 +59,14 @@ class bbox3
     }
 
     /**
+     * @return int $connectedSeconds
+     */
+    public function getConnectedSeconds()
+    {
+        return $this->connectedSeconds;
+    }
+
+    /**
      * @return boolean
      */
     public function isSsl()
@@ -68,6 +76,14 @@ class bbox3
 
     private function getLoginPageURL() {
         return "http".($this->ssl?'s':'')."://".$this->ip.':'.$this->port.'/login.lp';
+    }
+
+    private function getMainPageURL() {
+        return "http".($this->ssl?'s':'')."://".$this->ip.':'.$this->port.'/';
+    }
+
+    private function getDevicesLP() {
+        return "http".($this->ssl?'s':'')."://".$this->ip.':'.$this->port.'/network-global.lp';
     }
 
     public function initSessionKey()
@@ -91,6 +107,7 @@ class bbox3
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
         curl_setopt($ch, CURLOPT_URL, $this->getLoginPageURL());
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 
@@ -124,14 +141,14 @@ class bbox3
                 $rnPos = strpos($tmp, 'value="');
                 $rn = $this->decodeVar(substr($tmp, $rnPos));
                 if($rn == 0) $rn = null;
-                else echo 'rn    = '.$rn."\n";
+                // else echo 'rn    = '.$rn."\n";
             }
         }
 
-        echo 'realm = '.$realm."\n";
+      /*echo 'realm = '.$realm."\n";
         echo 'nonce = '.$nonce."\n";
         echo 'qop   = '.$qop."\n";
-        echo 'uri   = '.$uri."\n";
+        echo 'uri   = '.$uri."\n";*/
 
         curl_close($ch);
         unset($ch);
@@ -139,13 +156,89 @@ class bbox3
 
         $HA1 = md5($this->user.':'.$realm.':'.$this->password);
         $HA2 = md5('GET:'.$uri);
-        $hidepwd = md5($HA1.':'.$nonce.':00000001:xyz:'.$qop.':'.$HA2);
+        $hidepw = md5($HA1.':'.$nonce.':00000001:xyz:'.$qop.':'.$HA2);
+
+        // To send ->
+        // rn
+        // hidepw (from $hidepw)
+        // user
+        // password
+        // ok
+
+        $post_fields = array(
+            'rn'       => $rn,
+            'hidepw'   => $hidepw,
+            'user'     => $this->user,
+            'password' => $this->password,
+            'ok'       => 'Aanmelden'
+        );
+        $fields_string = "";
+        foreach($post_fields as $key=>$value) { $fields_string .= $key.'='.$value.'&'; }
+        rtrim($fields_string, '&');
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_URL, $this->getLoginPageURL());
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $fields_string);
+
+        ob_start();
+        $output = curl_exec($ch);
+        ob_end_clean();
+
+        curl_close($ch);
+        unset($ch);
+    }
+
+    function getMainPage() {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_URL, $this->getMainPageURL());
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+
+        ob_start();
+        $output = curl_exec($ch);
+        ob_end_clean();
+
+        curl_close($ch);
+        unset($ch);
+    }
+
+    function getDeviceInfo() {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
+        curl_setopt($ch, CURLOPT_URL, $this->getDevicesLP());
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+
+        ob_start();
+        $output = curl_exec($ch);
+        ob_end_clean();
+
+        curl_close($ch);
+        unset($ch);
+
+        foreach(explode("\n", $output) as $k => $v) {
+            $needle = "var dsl_time = ";
+            if($this->startsWith($v, $needle)) {
+                $this->connectedSeconds = $this->decodeInteger($v);
+            }
+        }
     }
 
     private function decodeVar($line) {
         // $start = strstr($line, '"');
         $lines = explode('"', $line);
         return $lines[1];
+    }
+
+    private function decodeInteger($line) {
+        $lines = explode('=', $line);
+        return rtrim(trim($lines[1]), ';');
     }
 
     function startsWith($haystack, $needle) {
