@@ -8,6 +8,12 @@
 
 class math {
 
+    static $SECOND = 1;
+    static $MINUTE = 1 * 60;
+    static $HOUR   = 1 * 60 * 60;
+    static $DAY    = 1 * 60 * 60 * 24;
+    static $WEEK   = 1 * 60 * 60 * 24 * 7;
+
     public function sectoday($sec) {
 
         $numdays =  floor($sec / 86400);
