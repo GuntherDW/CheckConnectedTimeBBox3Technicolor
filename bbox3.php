@@ -88,8 +88,9 @@ class bbox3
 
     public function initSessionKey()
     {
-        if(!empty($this->cookiejar)) @unlink($this->cookiejar);
-        $this->cookiejar = tempnam("/tmp", "bbox3-cookie");
+        $this->cookiejar = dirname(__FILE__).DIRECTORY_SEPARATOR.'bbox3-cookie';
+        if(file_exists($this->cookiejar)) return; // We already have a session cookie, don't generate a new one.
+
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
         curl_setopt($ch, CURLOPT_URL, $this->getLoginPageURL());
@@ -103,7 +104,31 @@ class bbox3
     }
 
     public function login() {
-        if(!empty($this->cookiejar)) $this->initSessionKey();
+        if(empty($this->cookiejar)) $this->initSessionKey();
+        // see if we still have a valid session!
+
+        else {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
+            curl_setopt($ch, CURLOPT_COOKIEJAR, $this->cookiejar);
+            curl_setopt($ch, CURLOPT_URL, $this->getMainPageURL());
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_HEADER, 1);
+
+            $output = curl_exec($ch);
+
+            if (preg_match('/login\.lp/i', $output)) {
+                echo 'Our stored session key was invalid, getting a new one!' . "\n";
+            } else {
+                echo 'Using stored session key!' . "\n";
+                return;
+            }
+            curl_close($ch);
+
+            @unlink($this->cookiejar);
+            $this->initSessionKey();
+        }
+        // end check
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_COOKIEFILE, $this->cookiejar);
@@ -251,8 +276,12 @@ class bbox3
     }
 
     public function closeSession() {
+        global $deletecookie;
         if(empty($this->cookiejar)) return;
-        @unlink($this->cookiejar);
+        if($deletecookie) {
+            echo 'Removing cookie, warning, this might starve the bbox3 of resources if used extensively!'. "\n";
+            @unlink($this->cookiejar);
+        }
     }
 
 }
